@@ -1,11 +1,11 @@
 # AWS Serverless Notification Service
 
-A serverless notification platform on AWS: an API accepts notification requests from other systems and dispatches them by email, SMS, or push, with full delivery history and status tracking.
+Uma plataforma serverless de notificações na AWS: uma API recebe solicitações de notificação de outros sistemas e realiza o envio por e-mail, SMS ou push, com histórico completo de entregas e consulta de status.
 
-## Architecture
+## Arquitetura
 
 ```
-Client ──POST /notifications──▶ API Gateway ──▶ Lambda (Ingest) ──▶ DynamoDB (persist RECEIVED)
+Cliente ──POST /notifications──▶ API Gateway ──▶ Lambda (Ingest) ──▶ DynamoDB (grava RECEIVED)
                                                         │
                                                         ▼
                                                   SQS (notifications-queue)
@@ -14,40 +14,40 @@ Client ──POST /notifications──▶ API Gateway ──▶ Lambda (Ingest) 
                                              Lambda (Processor) ──▶ SES / SNS (email, SMS, push)
                                                         │
                                                         ▼
-                                             DynamoDB (status update)
+                                             DynamoDB (atualiza status)
 
-Failed messages, after max receive count ──▶ SQS DLQ (notifications-dlq)
+Mensagens com falha, após o número máximo de tentativas ──▶ SQS DLQ (notifications-dlq)
 
-Client ──GET /notifications/{id}──▶ API Gateway ──▶ Lambda (Ingest) ──▶ DynamoDB (read)
+Cliente ──GET /notifications/{id}──▶ API Gateway ──▶ Lambda (Ingest) ──▶ DynamoDB (leitura)
 ```
 
-## Tech stack
+## Tecnologias
 
-| Concern | Technology |
+| Camada | Tecnologia |
 |---|---|
-| Language / runtime | Java 25 |
-| Local dev framework | Spring Boot 4.0.8 (REST controller only, not used in the deployed Lambdas) |
+| Linguagem / runtime | Java 25 |
+| Framework de desenvolvimento local | Spring Boot 4.0.8 (apenas o controller REST, não é usado nas Lambdas em produção) |
 | API | Amazon API Gateway (HTTP API) |
-| Compute | AWS Lambda (two functions: ingest, processor) |
-| Messaging | Amazon SQS + dead-letter queue |
-| Notification delivery | Amazon SES (email), Amazon SNS (SMS, push) |
-| Persistence | Amazon DynamoDB (AWS SDK v2 Enhanced Client) |
-| Access control | IAM (least-privilege, per-function roles) |
-| Observability | Amazon CloudWatch Logs |
-| Infrastructure as code | Terraform (`hashicorp/aws` provider) |
-| Local AWS emulation | LocalStack + Podman Compose |
-| Build | Maven (`maven-shade-plugin` for the Lambda artifact, `spring-boot-maven-plugin` for local dev) |
-| CI | GitHub Actions (build + test on every push/PR) |
+| Computação | AWS Lambda (duas funções: ingest, processor) |
+| Mensageria | Amazon SQS + fila de mensagens mortas (DLQ) |
+| Envio de notificações | Amazon SES (e-mail), Amazon SNS (SMS, push) |
+| Persistência | Amazon DynamoDB (AWS SDK v2 Enhanced Client) |
+| Controle de acesso | IAM (privilégio mínimo, uma role por função) |
+| Observabilidade | Amazon CloudWatch Logs |
+| Infraestrutura como código | Terraform (provider `hashicorp/aws`) |
+| Emulação local da AWS | LocalStack + Podman Compose |
+| Build | Maven (`maven-shade-plugin` para o artefato Lambda, `spring-boot-maven-plugin` para desenvolvimento local) |
+| CI | GitHub Actions (build + testes a cada push/PR) |
 
 ## API
 
-| Method | Path | Description |
+| Método | Rota | Descrição |
 |---|---|---|
-| `POST` | `/notifications` | Accepts a notification request, returns `202` with the generated id |
-| `GET` | `/notifications/{id}` | Returns the full record for one notification, `404` if unknown |
-| `GET` | `/notifications?status=SENT` | Lists notifications, optionally filtered by status |
+| `POST` | `/notifications` | Recebe uma solicitação de notificação, retorna `202` com o id gerado |
+| `GET` | `/notifications/{id}` | Retorna o registro completo de uma notificação, `404` se não existir |
+| `GET` | `/notifications?status=SENT` | Lista notificações, com filtro opcional por status |
 
-`POST /notifications` body:
+Corpo do `POST /notifications`:
 
 ```json
 {
@@ -58,23 +58,23 @@ Client ──GET /notifications/{id}──▶ API Gateway ──▶ Lambda (Inge
 }
 ```
 
-`channel` is one of `EMAIL`, `SMS`, `PUSH`. `subject` is optional (SMS/push ignore it).
+`channel` é um dos valores `EMAIL`, `SMS`, `PUSH`. `subject` é opcional (SMS/push ignoram esse campo).
 
-## Local development
+## Desenvolvimento local
 
-1. Start LocalStack (creates the `notifications` table, `notifications-queue` + `notifications-dlq`, and the push SNS topic on boot):
+1. Suba o LocalStack (cria a tabela `notifications`, as filas `notifications-queue` + `notifications-dlq` e o tópico SNS de push na inicialização):
 
    ```bash
    podman compose up -d
    ```
 
-2. Run the Spring Boot dev server (uses the `AWS_ENDPOINT_URL`-driven LocalStack defaults baked into `application.yml`):
+2. Rode o servidor de desenvolvimento Spring Boot (usa os defaults do LocalStack já configurados em `application.yml`, via `AWS_ENDPOINT_URL`):
 
    ```bash
    ./mvnw spring-boot:run
    ```
 
-3. Send a notification:
+3. Envie uma notificação:
 
    ```bash
    curl -X POST http://localhost:8080/notifications \
@@ -82,92 +82,92 @@ Client ──GET /notifications/{id}──▶ API Gateway ──▶ Lambda (Inge
      -d '{"recipient":"user@example.com","channel":"EMAIL","subject":"Hi","message":"Hello there"}'
    ```
 
-4. Check its status:
+4. Consulte o status:
 
    ```bash
-   curl http://localhost:8080/notifications/<id-from-step-3>
+   curl http://localhost:8080/notifications/<id-do-passo-3>
    curl "http://localhost:8080/notifications?status=SENT"
    ```
 
-Since LocalStack's Lambda/API Gateway services aren't wired up by this compose file (the local dev loop uses the Spring controller instead — see design decisions below), SQS processing only happens once you also run `ProcessNotificationHandler` yourself against LocalStack, or you point the LocalStack Lambda service at the built `-aws.jar` and an SQS event source mapping if you want to exercise the real Lambda path end to end locally.
+Como os serviços de Lambda/API Gateway do LocalStack não estão conectados neste compose (o fluxo local usa o controller Spring no lugar — ver decisões de projeto abaixo), o processamento da fila SQS só acontece se você também rodar o `ProcessNotificationHandler` manualmente contra o LocalStack, ou apontar o serviço Lambda do LocalStack para o `-aws.jar` gerado com um event source mapping do SQS, caso queira exercitar o caminho real das Lambdas de ponta a ponta localmente.
 
-## Building the Lambda deployment artifact
+## Gerando o artefato de deploy da Lambda
 
 ```bash
 ./mvnw clean package
 ```
 
-Produces two jars under `target/`:
+Gera dois jars em `target/`:
 
-- `aws-serverless-notification-service-0.0.1-SNAPSHOT.jar` — Spring Boot repackaged jar, for local dev (`java -jar` or `spring-boot:run`).
-- `aws-serverless-notification-service-0.0.1-SNAPSHOT-aws.jar` — flat shaded jar with a Lambda-correct classpath, for deployment to AWS Lambda.
+- `aws-serverless-notification-service-0.0.1-SNAPSHOT.jar` — jar reempacotado pelo Spring Boot, para desenvolvimento local (`java -jar` ou `spring-boot:run`).
+- `aws-serverless-notification-service-0.0.1-SNAPSHOT-aws.jar` — jar shaded plano, com classpath correto para deploy na AWS Lambda.
 
-## Deploying the infrastructure
+## Deploy da infraestrutura
 
-The Terraform in `infra/terraform/` provisions every AWS resource in the diagram above (DynamoDB table + GSI, SQS queue + DLQ, SNS topic, two Lambda functions, HTTP API, IAM roles, CloudWatch log groups). It is **not applied by this repository** — no AWS credentials are provisioned in the environment this was built in.
+O Terraform em `infra/terraform/` provisiona todos os recursos AWS do diagrama acima (tabela DynamoDB + GSI, fila SQS + DLQ, tópico SNS, duas funções Lambda, HTTP API, roles IAM, grupos de log do CloudWatch). Ele **não é aplicado por este repositório** — este ambiente de desenvolvimento não possui credenciais AWS.
 
 ```bash
 cd infra/terraform
-cp terraform.tfvars.example terraform.tfvars   # fill in your values (region, SES sender identity, etc.)
+cp terraform.tfvars.example terraform.tfvars   # preencha seus valores (região, identidade de remetente SES, etc.)
 terraform init
 terraform plan
 terraform apply
 ```
 
-## Project structure
+## Estrutura do projeto
 
 ```
 src/main/java/com/marcosperboni/notification/
-  AwsServerlessNotificationServiceApplication.java   Spring Boot entry point (local dev only)
+  AwsServerlessNotificationServiceApplication.java   ponto de entrada Spring Boot (apenas dev local)
   model/        NotificationRequest, NotificationRecord, NotificationResponse,
                 NotificationSubmittedResponse, NotificationChannel, NotificationStatus, ApiError
   repository/   NotificationRepository (DynamoDB Enhanced Client)
   service/      NotificationService, NotificationQueueMessage
     provider/   NotificationProvider, NotificationProviderFactory,
                 EmailNotificationProvider, SmsNotificationProvider, PushNotificationProvider
-  handler/      IngestNotificationHandler, ProcessNotificationHandler (deployed Lambda entry points)
-  controller/   NotificationController, GlobalExceptionHandler (local dev only)
+  handler/      IngestNotificationHandler, ProcessNotificationHandler (entry points das Lambdas em produção)
+  controller/   NotificationController, GlobalExceptionHandler (apenas dev local)
   config/       AwsClients, AwsClientConfiguration, NotificationBeanConfiguration,
                 NotificationProperties, LambdaEnvironment
   exception/    NotificationNotFoundException, NotificationDispatchException
 
-infra/terraform/   DynamoDB, SQS+DLQ, SNS, IAM, Lambda, API Gateway, CloudWatch, in separate files
-scripts/            LocalStack init hook (table/queue/topic bootstrap)
-docker-compose.yml  LocalStack for local dev (run with `podman compose`)
-.github/workflows/  CI: build + test on every push/PR
+infra/terraform/   DynamoDB, SQS+DLQ, SNS, IAM, Lambda, API Gateway, CloudWatch, em arquivos separados
+scripts/            hook de inicialização do LocalStack (cria tabela/filas/tópico)
+docker-compose.yml  LocalStack para desenvolvimento local (execute com `podman compose`)
+.github/workflows/  CI: build + testes a cada push/PR
 ```
 
-## Design decisions
+## Decisões de projeto
 
-**Plain Lambda handlers, not Spring inside Lambda.** Running a full Spring context on every cold start is the classic anti-pattern for latency-sensitive Lambda functions. `IngestNotificationHandler` and `ProcessNotificationHandler` implement `RequestHandler` directly with manual, no-arg-constructor dependency wiring — no Spring on the classpath's hot path. The Spring Boot app (`NotificationController`) is a local-dev-only façade over the exact same `service`/`repository`/`provider` classes, so there is no duplicated business logic between the two entry points; only the adapters differ. A package-private secondary constructor on `IngestNotificationHandler` accepts pre-built dependencies purely so unit tests can inject mocks without paying for real AWS SDK client construction.
+**Lambdas puras, sem Spring rodando dentro da Lambda.** Manter um contexto Spring completo em todo cold start é o anti-padrão clássico para funções Lambda sensíveis a latência. `IngestNotificationHandler` e `ProcessNotificationHandler` implementam `RequestHandler` diretamente, com injeção manual de dependências via construtor sem argumentos — sem Spring no caminho quente do classpath. A aplicação Spring Boot (`NotificationController`) é uma fachada usada apenas em desenvolvimento local sobre as mesmas classes de `service`/`repository`/`provider`, então não há lógica de negócio duplicada entre os dois pontos de entrada; só os adaptadores mudam. Um construtor secundário package-private em `IngestNotificationHandler` aceita dependências já construídas apenas para permitir que os testes unitários injetem mocks sem pagar o custo de criar clientes reais do AWS SDK.
 
-**DynamoDB item is a plain JavaBean, not a Lombok class.** The AWS SDK v2 Enhanced Client's `@DynamoDbBean` introspection reads annotations (`@DynamoDbPartitionKey`, `@DynamoDbSecondaryPartitionKey`) off the getter methods themselves. Lombok does not copy custom annotations onto its generated getters without extra `lombok.config` wiring, so `NotificationRecord` is written by hand to keep the partition key and GSI wiring unambiguous and safe from a class of subtle runtime failures. `channel`/`status` are stored as their enum name and `createdAt`/`updatedAt` as ISO-8601 strings, since the Enhanced Client has no built-in `java.time.Instant` converter.
+**O item do DynamoDB é um JavaBean simples, não uma classe Lombok.** A introspecção do `@DynamoDbBean` do AWS SDK v2 Enhanced Client lê as anotações (`@DynamoDbPartitionKey`, `@DynamoDbSecondaryPartitionKey`) diretamente nos métodos getters. O Lombok não copia anotações customizadas para os getters que ele gera, a menos que se configure `lombok.config` adicionalmente, então `NotificationRecord` foi escrito manualmente para deixar a chave de partição e o GSI sem ambiguidade e livres dessa classe de falha sutil em tempo de execução. `channel`/`status` são armazenados pelo nome do enum e `createdAt`/`updatedAt` como strings ISO-8601, já que o Enhanced Client não tem conversor nativo para `java.time.Instant`.
 
-**Lambda jar excludes the AWS SDK's default async Netty client.** Every AWS SDK client used here (DynamoDB, SQS, SNS, SES) is called synchronously, but each service module pulls in `netty-nio-client` by default. That's dozens of extra classes bundled into the exact jar this project is trying to keep lean for cold starts, so the `pom.xml` excludes it per SDK dependency and adds `url-connection-client` instead, wired explicitly in `AwsClients`.
+**O jar da Lambda exclui o cliente assíncrono Netty padrão do AWS SDK.** Todos os clientes AWS SDK usados aqui (DynamoDB, SQS, SNS, SES) são chamados de forma síncrona, mas cada módulo de serviço traz o `netty-nio-client` por padrão. São dezenas de classes extras empacotadas no jar que este projeto tenta manter enxuto para reduzir cold start, então o `pom.xml` exclui esse cliente em cada dependência do SDK e adiciona o `url-connection-client` no lugar, conectado explicitamente em `AwsClients`.
 
-**Shaded jar must be built before `spring-boot:repackage` runs.** Both the shade plugin and `spring-boot-maven-plugin` bind to the `package` phase; `spring-boot-maven-plugin` rewrites the main jar in place into its nested `BOOT-INF/` loader layout. The shade plugin is declared first in `pom.xml` so it shades the still-flat jar (default jar:jar always runs before either), producing a Lambda-correct flat classpath; `spring-boot-maven-plugin` then repackages the main artifact afterward for local dev, without affecting the already-attached `-aws` classified jar.
+**O jar shaded precisa ser gerado antes do `spring-boot:repackage` rodar.** Tanto o plugin de shade quanto o `spring-boot-maven-plugin` são vinculados à fase `package`; o `spring-boot-maven-plugin` reescreve o jar principal no lugar, transformando-o na estrutura aninhada `BOOT-INF/`. O plugin de shade é declarado primeiro no `pom.xml` para empacotar o jar ainda plano (o `jar:jar` padrão sempre roda antes de qualquer um dos dois), gerando um classpath plano correto para a Lambda; o `spring-boot-maven-plugin` então reempacota o artefato principal depois, para uso em desenvolvimento local, sem afetar o jar `-aws` que já foi anexado.
 
-**SQS batch failures retry the whole batch.** `ProcessNotificationHandler` does not implement `ReportBatchItemFailures` partial-batch reporting — a failure on any message in a batch causes Lambda's SQS trigger to retry the entire batch, the simplest and default behavior. Combined with `receiveCount` tracking, once a message's `ApproximateReceiveCount` reaches the configured max attempts, its DynamoDB record is proactively marked `DEAD_LETTER` (even though it's SQS's own redrive policy, not this code, that actually moves the message to the DLQ). Partial-batch failure reporting and delivery idempotency keys are reasonable next steps if duplicate-send risk under retry needs tightening.
+**Falhas em lote no SQS reprocessam o lote inteiro.** `ProcessNotificationHandler` não implementa o relatório parcial de falhas (`ReportBatchItemFailures`) — uma falha em qualquer mensagem do lote faz o trigger SQS da Lambda reprocessar o lote inteiro, o comportamento padrão mais simples. Combinado ao rastreamento de `receiveCount`, quando o `ApproximateReceiveCount` de uma mensagem atinge o número máximo de tentativas configurado, o registro correspondente no DynamoDB é marcado proativamente como `DEAD_LETTER` (mesmo sendo a própria política de redrive do SQS, e não este código, quem efetivamente move a mensagem para a DLQ). Relatório parcial de falhas em lote e chaves de idempotência de envio são evoluções razoáveis caso o risco de envio duplicado em retentativas precise ser reduzido.
 
-**Push notifications: a real gap, not faked.** `PushNotificationProvider` performs a genuine `sns:Publish` against a configured SNS topic ARN. Real per-device mobile push (APNs/FCM) requires an SNS Platform Application plus a platform endpoint ARN registered per device, which in turn requires Apple/Google push credentials this project does not have. Wiring individual devices means subscribing platform endpoints to this topic (or publishing to a `targetArn` endpoint instead of the topic) once a platform application exists — that setup step is out of scope here and is called out explicitly rather than stubbed out silently.
+**Notificações push: uma lacuna real, não simulada.** `PushNotificationProvider` realiza um `sns:Publish` de verdade contra um ARN de tópico SNS configurado. Push móvel real por dispositivo (APNs/FCM) exige uma SNS Platform Application mais um ARN de endpoint de plataforma registrado por dispositivo, o que por sua vez exige credenciais de push da Apple/Google que este projeto não possui. Conectar dispositivos individuais significa inscrever endpoints de plataforma neste tópico (ou publicar em um endpoint `targetArn` em vez do tópico) assim que uma platform application existir — essa etapa de configuração está fora do escopo aqui e é apontada explicitamente, em vez de ser simulada silenciosamente.
 
-**IAM: SNS `Publish` to a phone number has no ARN to scope.** The processor role's SMS-publish statement uses `Resource: "*"`, which is the only option AWS's own IAM reference gives for this specific action/target combination (a destination phone number is not an ARN-addressable resource). Every other statement — DynamoDB table + GSI, the specific SQS queue, the specific SNS push topic, the SES sender identity, and each function's own CloudWatch log group — is scoped to its exact resource ARN.
+**IAM: `Publish` do SNS para um número de telefone não tem ARN para restringir.** A statement de envio de SMS da role do processor usa `Resource: "*"`, que é a única opção que a própria referência de IAM da AWS oferece para essa combinação específica de ação/destino (um número de telefone de destino não é um recurso endereçável por ARN). Todas as outras statements — tabela DynamoDB + GSI, a fila SQS específica, o tópico SNS de push específico, a identidade de remetente do SES e o grupo de log do CloudWatch de cada função — são restritas ao ARN exato do recurso.
 
-**Lambda runtime is `java25` (configurable).** If the target AWS region's Lambda service has not yet added a `java25` managed runtime by the time this is deployed, override `lambda_runtime` in `terraform.tfvars` to the newest available Java runtime and recompile with a matching `--release` version — a Java 25 class file cannot run on an older JVM runtime.
+**O runtime da Lambda é `java25` (configurável).** Se o serviço Lambda da região AWS de destino ainda não tiver adicionado um runtime gerenciado `java25` no momento do deploy, troque a variável `lambda_runtime` no `terraform.tfvars` para o runtime Java mais recente disponível e recompile com a versão `--release` correspondente — um `.class` compilado para Java 25 não roda em uma JVM mais antiga.
 
-**LocalStack pinned to `3.8`, not `latest`.** Newer LocalStack images gate startup behind a `LOCALSTACK_AUTH_TOKEN` license check even for services that used to be free. `docker-compose.yml` pins a Community-edition version that starts without any token, verified end to end against this project's DynamoDB/SQS/SNS usage.
+**LocalStack fixado na versão `3.8`, e não `latest`.** Imagens mais recentes do LocalStack passaram a exigir um `LOCALSTACK_AUTH_TOKEN` de licença mesmo para serviços que antes eram gratuitos. O `docker-compose.yml` fixa uma versão da edição Community que inicia sem exigir nenhum token, validada de ponta a ponta com o uso de DynamoDB/SQS/SNS deste projeto.
 
-## Testing
+## Testes
 
-`./mvnw clean verify` runs the full suite with Mockito mocks — no Podman, no LocalStack, no AWS credentials required:
+`./mvnw clean verify` executa toda a suíte com mocks do Mockito — sem necessidade de Podman, LocalStack ou credenciais AWS:
 
-- `NotificationServiceTest` — persist → enqueue → status transition flow, including the `FAILED` vs `DEAD_LETTER` branch at max attempts.
-- `NotificationProviderFactoryTest` — correct provider resolved per channel.
-- `NotificationControllerTest` — MockMvc: validation → `400`, happy path → `202`, unknown id → `404`.
-- `IngestNotificationHandlerTest` — the same contract exercised through the actual Lambda handler class.
+- `NotificationServiceTest` — fluxo completo de gravação → enfileiramento → transição de status, incluindo o desvio entre `FAILED` e `DEAD_LETTER` no número máximo de tentativas.
+- `NotificationProviderFactoryTest` — provider correto é resolvido para cada canal.
+- `NotificationControllerTest` — MockMvc: validação → `400`, caminho feliz → `202`, id inexistente → `404`.
+- `IngestNotificationHandlerTest` — o mesmo contrato exercitado através da classe real da Lambda.
 
-CI (`.github/workflows/ci.yml`) runs this same build on every push and pull request.
+O CI (`.github/workflows/ci.yml`) executa esse mesmo build a cada push e pull request.
 
-## License
+## Licença
 
-MIT — see [LICENSE](LICENSE).
+MIT — veja [LICENSE](LICENSE).
