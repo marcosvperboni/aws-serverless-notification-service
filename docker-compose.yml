@@ -1,0 +1,16 @@
+services:
+  localstack:
+    image: localstack/localstack:3.8
+    ports:
+      - "4566:4566"
+    environment:
+      SERVICES: dynamodb,sqs,sns,ses,lambda,apigateway
+      DEFAULT_REGION: us-east-1
+      AWS_ACCESS_KEY_ID: test
+      AWS_SECRET_ACCESS_KEY: test
+    volumes:
+      - "./scripts/localstack-init.sh:/etc/localstack/init/ready.d/localstack-init.sh"
+      - "localstack-data:/var/lib/localstack"
+
+volumes:
+  localstack-data:
