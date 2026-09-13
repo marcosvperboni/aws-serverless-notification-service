@@ -1,0 +1,8 @@
+aws_region   = "us-east-1"
+project_name = "notification-service"
+environment  = "dev"
+
+ses_sender_address = "no-reply@yourdomain.com"
+
+lambda_jar_path = "../../target/aws-serverless-notification-service-0.0.1-SNAPSHOT-aws.jar"
+lambda_runtime  = "java25"

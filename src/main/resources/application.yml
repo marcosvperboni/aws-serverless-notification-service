@@ -1,0 +1,18 @@
+spring:
+  application:
+    name: aws-serverless-notification-service
+
+server:
+  port: 8080
+
+notification:
+  table-name: ${NOTIFICATION_TABLE_NAME:notifications}
+  queue-url: ${NOTIFICATION_QUEUE_URL:http://localhost:4566/000000000000/notifications-queue}
+  dlq-url: ${NOTIFICATION_DLQ_URL:http://localhost:4566/000000000000/notifications-dlq}
+  ses-sender-address: ${NOTIFICATION_SES_SENDER:no-reply@notifications.local}
+  push-topic-arn: ${NOTIFICATION_PUSH_TOPIC_ARN:arn:aws:sns:us-east-1:000000000000:notifications-push}
+  max-processing-attempts: ${NOTIFICATION_MAX_ATTEMPTS:3}
+
+logging:
+  level:
+    com.marcosperboni.notification: INFO
